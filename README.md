@@ -112,6 +112,7 @@ Browser ◄──► coturn :3478 (TURN relay) ◄──► Emulator
 ```
 emu-service/
 ├── setup.sh              # Creates GCP firewall rules + VM
+├── deploy-nginx.sh       # Safe UI redeploy (see Updating the UI below)
 ├── cloud-init.yaml       # VM bootstrap (runs once on first boot)
 ├── docker-compose.yml    # All Docker services
 ├── envoy.yaml            # Envoy proxy routing config
@@ -120,10 +121,11 @@ emu-service/
     ├── patch.js          # Patches two npm packages (see Non-obvious fixes below)
     └── src/
         ├── config.js              # No-auth config (replaces generated file)
-        ├── App.js                 # Fixed auth race condition
+        ├── App.js                 # App root + MUI light theme
         └── components/
             ├── login_firebase.js  # Firebase bypass (no-auth auto-login)
-            └── emulator_screen.js # WebRTC + PNG view with correct dimensions
+            ├── emulator_screen.js # WebRTC + PNG view, drag-and-drop APK install
+            └── logcat_view.js     # On-demand logcat (streams only when panel is open)
 ```
 
 ---
@@ -176,6 +178,27 @@ Each API level creates a separate instance (`android-emu-34`), so multiple versi
 
 ---
 
+## Updating the UI
+
+**Always use `./deploy-nginx.sh`** — do not restart the nginx container directly.
+
+```bash
+# Edit files in nginx/src/, then:
+./deploy-nginx.sh
+```
+
+The script:
+1. Copies changed source files to the instance
+2. **Stops envoy first** — cuts off browser access before nginx goes down
+3. Rebuilds the nginx Docker image (React build runs inside the container)
+4. Swaps the nginx container
+5. Brings envoy back up
+
+**Why not just `docker restart emulator_nginx`?**  
+When nginx is unavailable even briefly, the browser's WebRTC component retries `requestRtcStream` repeatedly. The emulator cannot handle many concurrent WebRTC sessions and segfaults (exit 139). Stopping envoy first gives browsers a clean TCP disconnect instead of a retry storm that crashes the emulator.
+
+---
+
 ## Troubleshooting
 
 **Web UI loads but shows a blank screen**
@@ -184,8 +207,18 @@ Each API level creates a separate instance (`android-emu-34`), so multiple versi
 
 **WebRTC stuck at "connecting"**
 - Verify coturn is running: `sudo systemctl status coturn`
-- Check the ICE config has a real IP: `cat /etc/emulator/get-ice-config.sh`
-- Ensure firewall rule `allow-android-emulator-host` allows UDP 49152-65535
+- Check the ICE config uses the **internal** IP (not external — GCP hairpin NAT blocks containers from reaching their own external IP):
+  ```bash
+  cat /tmp/get-ice-config.sh   # should show turn:10.x.x.x:3478
+  ```
+- Ensure firewall rule `allow-android-emulator-host` allows UDP 3478 and 49152–65535
+- If the emulator crashed (exit 139 / SIGSEGV from a WebRTC retry storm), do a clean restart:
+  ```bash
+  docker stop emulator_envoy
+  docker restart emulator_emulator
+  # wait ~2 minutes for Android to boot
+  docker start emulator_envoy
+  ```
 
 **ADB can't connect**
 - Confirm port 5555 is open: `gcloud compute firewall-rules list --project=PROJECT`
