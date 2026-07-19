@@ -345,20 +345,43 @@ write_files:
       // Fix 2: jsep_protocol_driver.js - inject TURN/STUN servers.
       // signal.start is a GUID string, so RTCPeerConnection gets no ICE servers.
       // TURN host uses window.location.hostname so no IP is baked into the image.
-      var jsepFile = 'node_modules/android-emulator-webrtc/src/components/emulator/net/jsep_protocol_driver.js';
-      var jsep = fs.readFileSync(jsepFile, 'utf8');
-      var oldLine = 'this.peerConnection = new RTCPeerConnection(signal.start);';
-      var newLine = [
+      // Must patch BOTH src/ (ES6) and dist/ (Babel-compiled) because
+      // emulator/index.js does require('../dist'), so webpack bundles dist/, not src/.
+      // Babel compiles `this` -> `_this` in the dist version.
+      var iceServersCode = [
+        '      { urls: "stun:stun.l.google.com:19302" },',
+        '      { urls: ["turn:" + window.location.hostname + ":3478", "turn:" + window.location.hostname + ":3478?transport=tcp"], username: "emulator", credential: "emulator123" }'
+      ].join('\n');
+
+      // Patch src/
+      var jsepSrcFile = 'node_modules/android-emulator-webrtc/src/components/emulator/net/jsep_protocol_driver.js';
+      var jsepSrc = fs.readFileSync(jsepSrcFile, 'utf8');
+      var srcOld = 'this.peerConnection = new RTCPeerConnection(signal.start);';
+      var srcNew = [
         'var iceConfig = (signal.start && typeof signal.start === "object") ? signal.start : {};',
         '    iceConfig.iceServers = [',
-        '      { urls: "stun:stun.l.google.com:19302" },',
-        '      { urls: "turn:" + window.location.hostname + ":3478", username: "emulator", credential: "emulator123" }',
+        iceServersCode,
         '    ];',
         '    this.peerConnection = new RTCPeerConnection(iceConfig);'
       ].join('\n    ');
-      var jsepPatched = jsep.replace(oldLine, newLine);
-      if (jsepPatched === jsep) { console.log('WARNING: jsep patch not applied'); }
-      else { fs.writeFileSync(jsepFile, jsepPatched); console.log('Patched jsep_protocol_driver.js'); }
+      var jsepSrcPatched = jsepSrc.replace(srcOld, srcNew);
+      if (jsepSrcPatched === jsepSrc) { console.log('WARNING: jsep src patch not applied'); }
+      else { fs.writeFileSync(jsepSrcFile, jsepSrcPatched); console.log('Patched jsep_protocol_driver.js (src)'); }
+
+      // Patch dist/ (Babel-compiled: this -> _this) — THIS is what webpack actually bundles
+      var jsepDistFile = 'node_modules/android-emulator-webrtc/dist/components/emulator/net/jsep_protocol_driver.js';
+      var jsepDist = fs.readFileSync(jsepDistFile, 'utf8');
+      var distOld = '_this.peerConnection = new RTCPeerConnection(signal.start);';
+      var distNew = [
+        'var iceConfig = (signal.start && typeof signal.start === "object") ? signal.start : {};',
+        '          iceConfig.iceServers = [',
+        iceServersCode,
+        '          ];',
+        '          _this.peerConnection = new RTCPeerConnection(iceConfig);'
+      ].join('\n');
+      var jsepDistPatched = jsepDist.replace(distOld, distNew);
+      if (jsepDistPatched === jsepDist) { console.log('WARNING: jsep dist patch not applied'); }
+      else { fs.writeFileSync(jsepDistFile, jsepDistPatched); console.log('Patched jsep_protocol_driver.js (dist)'); }
 
   # ── React: config.js ─────────────────────────────────────────────────────────
   - path: /opt/emulator/nginx/src/config.js
@@ -597,10 +620,12 @@ runcmd:
     udevadm control --reload-rules && udevadm trigger
     chown root:kvm /dev/kvm && chmod 0660 /dev/kvm
 
-    # Fetch GCE external IP from instance metadata
+    # Fetch GCE external and internal IPs from instance metadata
     EXTERNAL_IP=$(curl -sf -H "Metadata-Flavor: Google" \
       "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip")
-    echo "External IP: $EXTERNAL_IP"
+    INTERNAL_IP=$(curl -sf -H "Metadata-Flavor: Google" \
+      "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip")
+    echo "External IP: $EXTERNAL_IP  Internal IP: $INTERNAL_IP"
 
     # coturn config
     mkdir -p /etc/emulator
@@ -619,9 +644,13 @@ runcmd:
     systemctl enable coturn && systemctl start coturn
 
     # ICE config script (the emulator calls this at WebRTC session start)
+    # IMPORTANT: Use INTERNAL_IP here, not EXTERNAL_IP.
+    # Docker containers on GCE cannot reach the instance's own external IP (GCP hairpin NAT).
+    # coturn's external-ip= setting still advertises the external IP to relay candidates,
+    # so browsers outside the VM connect correctly via the external IP.
     cat > /etc/emulator/get-ice-config.sh <<ICEEOF
     #!/bin/sh
-    printf '{"iceServers":[{"urls":["turn:${EXTERNAL_IP}:3478"],"username":"emulator","credential":"emulator123"},{"urls":["stun:stun.l.google.com:19302"]}]}'
+    printf '{"iceServers":[{"urls":["turn:${INTERNAL_IP}:3478"],"username":"emulator","credential":"emulator123"},{"urls":["stun:stun.l.google.com:19302"]}]}'
     ICEEOF
     chmod +x /etc/emulator/get-ice-config.sh
 

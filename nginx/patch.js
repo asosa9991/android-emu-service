@@ -18,7 +18,7 @@ else { fs.writeFileSync(ehFile, ehPatched); console.log('Patched event_handler.j
 // because emulator/index.js requires('../dist'), not src/.
 var iceServersCode = [
   '      { urls: "stun:stun.l.google.com:19302" },',
-  '      { urls: "turn:" + window.location.hostname + ":3478", username: "emulator", credential: "emulator123" }'
+  '      { urls: ["turn:" + window.location.hostname + ":3478", "turn:" + window.location.hostname + ":3478?transport=tcp"], username: "emulator", credential: "emulator123" }'
 ].join('\n');
 
 // Patch src/
