@@ -12,20 +12,13 @@ var EMULATOR_GRPC =
 
 const theme = createTheme({
   palette: {
-    mode: "dark",
+    mode: "light",
     primary: { main: "#6366f1" },
-    background: { default: "#0c0c10", paper: "#16161e" },
-    text: { primary: "#e2e2e8", secondary: "#8b8ba0" },
+    background: { default: "#f4f4f8", paper: "#ffffff" },
+    text: { primary: "#1a1a24", secondary: "#6b6b80" },
   },
   typography: {
     fontFamily: '"Inter", "SF Pro Display", system-ui, -apple-system, sans-serif',
-  },
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: { backgroundColor: "#0c0c10", margin: 0 },
-      },
-    },
   },
 });
 

@@ -6,274 +6,175 @@ import LogcatView from "./logcat_view";
 import OndemandVideoIcon from "@mui/icons-material/OndemandVideo";
 import ImageIcon from "@mui/icons-material/Image";
 import LogoutIcon from "@mui/icons-material/Logout";
+import TerminalIcon from "@mui/icons-material/Terminal";
 import Tooltip from "@mui/material/Tooltip";
 import Copyright from "./copyright";
 
 const EMU_WIDTH = 390;
 const EMU_HEIGHT = 720;
+const LOGCAT_HEIGHT = 280;
 
 const styles = () => ({
-  "@global": {
-    "*, *::before, *::after": { boxSizing: "border-box" },
-    body: { margin: 0, background: "#0c0c10" },
-    "@import": "url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap')",
-  },
-
   root: {
     minHeight: "100vh",
-    background: "#0c0c10",
+    background: "#f4f4f8",
     fontFamily: '"Inter", system-ui, -apple-system, sans-serif',
     display: "flex",
     flexDirection: "column",
   },
 
-  // ── top bar ────────────────────────────────────────────────────────────────
+  // ── topbar ─────────────────────────────────────────────────────────────────
   topbar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 24px",
     height: 56,
-    background: "rgba(22,22,30,0.85)",
+    background: "rgba(255,255,255,0.85)",
     backdropFilter: "blur(16px)",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid rgba(0,0,0,0.07)",
     position: "sticky",
     top: 0,
     zIndex: 100,
   },
-  brand: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
+  brand: { display: "flex", alignItems: "center", gap: 10 },
   brandDot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    background: "#6366f1",
-    boxShadow: "0 0 8px #6366f1",
-    flexShrink: 0,
+    width: 8, height: 8, borderRadius: "50%",
+    background: "#6366f1", boxShadow: "0 0 8px rgba(99,102,241,0.5)", flexShrink: 0,
   },
-  brandName: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: "#e2e2e8",
-    letterSpacing: "-0.01em",
-  },
+  brandName: { fontSize: 15, fontWeight: 600, color: "#1a1a24", letterSpacing: "-0.01em" },
 
   statusPill: {
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-    padding: "4px 12px",
-    borderRadius: 20,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    fontSize: 12,
-    fontWeight: 500,
-    color: "#8b8ba0",
-    letterSpacing: "0.01em",
+    display: "flex", alignItems: "center", gap: 7,
+    padding: "4px 12px", borderRadius: 20,
+    background: "rgba(0,0,0,0.04)",
+    border: "1px solid rgba(0,0,0,0.08)",
+    fontSize: 12, fontWeight: 500, color: "#6b6b80", letterSpacing: "0.01em",
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    flexShrink: 0,
-  },
+  statusDot: { width: 6, height: 6, borderRadius: "50%", flexShrink: 0 },
 
-  toolbar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-  },
+  toolbar: { display: "flex", alignItems: "center", gap: 4 },
   iconBtn: {
-    width: 34,
-    height: 34,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
-    border: "none",
-    background: "transparent",
-    color: "#8b8ba0",
-    cursor: "pointer",
-    transition: "background 0.15s, color 0.15s",
-    "&:hover": {
-      background: "rgba(255,255,255,0.08)",
-      color: "#e2e2e8",
-    },
+    width: 34, height: 34,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    borderRadius: 8, border: "none",
+    background: "transparent", color: "#6b6b80",
+    cursor: "pointer", transition: "background 0.15s, color 0.15s",
+    "&:hover": { background: "rgba(0,0,0,0.06)", color: "#1a1a24" },
   },
   iconBtnActive: {
-    background: "rgba(99,102,241,0.15)",
-    color: "#818cf8",
-    "&:hover": {
-      background: "rgba(99,102,241,0.22)",
-      color: "#818cf8",
-    },
+    background: "rgba(99,102,241,0.1)", color: "#6366f1",
+    "&:hover": { background: "rgba(99,102,241,0.15)", color: "#6366f1" },
   },
-  divider: {
-    width: 1,
-    height: 20,
-    background: "rgba(255,255,255,0.08)",
-    margin: "0 4px",
-  },
+  divider: { width: 1, height: 20, background: "rgba(0,0,0,0.1)", margin: "0 4px" },
 
   // ── main content ───────────────────────────────────────────────────────────
   content: {
     flex: 1,
     display: "flex",
-    gap: 20,
-    padding: 24,
-    alignItems: "flex-start",
-  },
-
-  // ── device panel ──────────────────────────────────────────────────────────
-  devicePanel: {
-    flexShrink: 0,
-    display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: 16,
+    padding: "32px 24px",
+    gap: 20,
   },
+
+  // ── device frame ───────────────────────────────────────────────────────────
   deviceFrame: {
-    position: "relative",
     width: EMU_WIDTH + 24,
-    borderRadius: 40,
-    background: "linear-gradient(145deg, #1e1e2a 0%, #16161e 100%)",
-    boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 24px 64px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)",
-    padding: "24px 12px 20px",
+    borderRadius: 44,
+    background: "linear-gradient(160deg, #2a2a35 0%, #1a1a22 100%)",
+    boxShadow: [
+      "0 0 0 1px rgba(255,255,255,0.08)",
+      "0 2px 4px rgba(0,0,0,0.2)",
+      "0 12px 40px rgba(0,0,0,0.25)",
+      "0 32px 80px rgba(0,0,0,0.15)",
+    ].join(", "),
+    padding: "22px 12px 18px",
   },
   deviceNotch: {
-    width: 120,
-    height: 6,
-    borderRadius: 3,
-    background: "rgba(255,255,255,0.12)",
-    margin: "0 auto 16px",
+    width: 100, height: 6, borderRadius: 3,
+    background: "rgba(255,255,255,0.1)", margin: "0 auto 14px",
   },
   emuWrapper: {
     position: "relative",
-    width: EMU_WIDTH,
-    height: EMU_HEIGHT,
-    borderRadius: 28,
-    overflow: "hidden",
-    background: "#000",
+    width: EMU_WIDTH, height: EMU_HEIGHT,
+    borderRadius: 28, overflow: "hidden", background: "#000",
   },
   emuContainer: {
-    width: "100%",
-    height: "100%",
+    width: "100%", height: "100%",
     "& > div": { width: "100% !important", height: "100% !important" },
     "& video": { width: "100% !important", height: "100% !important" },
     "& canvas": { width: "100% !important", height: "100% !important" },
   },
   deviceHome: {
-    width: 48,
-    height: 4,
-    borderRadius: 2,
-    background: "rgba(255,255,255,0.15)",
-    margin: "14px auto 0",
+    width: 44, height: 4, borderRadius: 2,
+    background: "rgba(255,255,255,0.15)", margin: "12px auto 0",
   },
 
-  // ── drag overlay ──────────────────────────────────────────────────────────
+  // ── drag overlay ───────────────────────────────────────────────────────────
   dropOverlay: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(10,10,16,0.75)",
-    backdropFilter: "blur(8px)",
-    borderRadius: 28,
-    gap: 12,
-    zIndex: 10,
-    pointerEvents: "none",
+    position: "absolute", inset: 0,
+    display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center",
+    background: "rgba(10,10,16,0.72)", backdropFilter: "blur(8px)",
+    borderRadius: 28, gap: 10, zIndex: 10, pointerEvents: "none",
   },
-  dropIcon: {
-    fontSize: 48,
-    lineHeight: 1,
-  },
-  dropLabel: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: "#e2e2e8",
-    letterSpacing: "-0.01em",
-  },
-  dropSub: {
-    fontSize: 12,
-    color: "#8b8ba0",
-    marginTop: -6,
-  },
+  dropIcon: { fontSize: 44, lineHeight: 1 },
+  dropLabel: { fontSize: 15, fontWeight: 600, color: "#fff", letterSpacing: "-0.01em" },
+  dropSub: { fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: -4 },
   toastBar: {
-    position: "absolute",
-    bottom: 16,
-    left: "50%",
-    transform: "translateX(-50%)",
-    whiteSpace: "nowrap",
-    padding: "8px 16px",
-    borderRadius: 20,
-    fontSize: 13,
-    fontWeight: 500,
-    color: "#e2e2e8",
-    zIndex: 20,
-    pointerEvents: "none",
-    backdropFilter: "blur(12px)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
+    whiteSpace: "nowrap", padding: "7px 16px", borderRadius: 20,
+    fontSize: 12, fontWeight: 500, color: "#fff", zIndex: 20,
+    pointerEvents: "none", backdropFilter: "blur(12px)",
+    border: "1px solid rgba(255,255,255,0.15)",
   },
 
-  // ── logcat panel ──────────────────────────────────────────────────────────
+  // ── logcat panel ───────────────────────────────────────────────────────────
   logcatPanel: {
-    flex: 1,
-    minWidth: 280,
-    maxWidth: 520,
-    height: EMU_HEIGHT + 48 + 60, // match device frame height
+    width: EMU_WIDTH + 24,
+    height: LOGCAT_HEIGHT,
+    background: "#fff",
+    borderRadius: 16,
+    border: "1px solid rgba(0,0,0,0.08)",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
     display: "flex",
     flexDirection: "column",
-    background: "#16161e",
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.06)",
     overflow: "hidden",
   },
   logcatHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "12px 16px",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#8b8ba0",
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    padding: "10px 14px",
+    borderBottom: "1px solid rgba(0,0,0,0.06)",
     flexShrink: 0,
   },
-  logcatDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: "#22c55e",
-    boxShadow: "0 0 6px #22c55e",
-    flexShrink: 0,
+  logcatTitle: {
+    display: "flex", alignItems: "center", gap: 7,
+    fontSize: 11, fontWeight: 600, color: "#6b6b80",
+    letterSpacing: "0.07em", textTransform: "uppercase",
   },
-  logcatBody: {
-    flex: 1,
-    overflow: "hidden",
-    "& > *": { height: "100% !important" },
+  logcatLiveDot: {
+    width: 6, height: 6, borderRadius: "50%",
+    background: "#22c55e", boxShadow: "0 0 5px #22c55e",
   },
+  logcatClear: {
+    fontSize: 11, fontWeight: 500, color: "#9090a8",
+    background: "none", border: "none", cursor: "pointer", padding: "2px 6px",
+    borderRadius: 4, "&:hover": { color: "#6366f1", background: "rgba(99,102,241,0.08)" },
+  },
+  logcatBody: { flex: 1, overflow: "hidden" },
 
   footer: {
     padding: "16px 24px",
-    borderTop: "1px solid rgba(255,255,255,0.05)",
-    fontSize: 11,
-    color: "#4a4a5a",
-    textAlign: "center",
+    borderTop: "1px solid rgba(0,0,0,0.06)",
+    fontSize: 11, color: "#b0b0c0", textAlign: "center",
   },
 });
 
-// Helper: status dot color
 function dotColor(state) {
   if (state === "connected") return "#22c55e";
   if (state === "disconnected" || state === "error") return "#ef4444";
-  return "#f59e0b"; // connecting / transitioning
+  return "#f59e0b";
 }
 
 class EmulatorScreen extends React.Component {
@@ -285,12 +186,11 @@ class EmulatorScreen extends React.Component {
     dragDepth: 0,
     dragIsApk: false,
     uploadStatus: null,
+    showLogcat: false,
+    logcatKey: 0, // increment to reset/clear logcat
   };
 
-  static propTypes = {
-    uri: PropTypes.string,
-    auth: PropTypes.object,
-  };
+  static propTypes = { uri: PropTypes.string, auth: PropTypes.object };
 
   stateChange = (s) => this.setState({ emuState: s });
   onError = (err) => console.error("gRPC error:", err);
@@ -317,46 +217,40 @@ class EmulatorScreen extends React.Component {
 
   _upload(file, endpoint) {
     const isInstall = endpoint === "/api/install";
-    this.setState({
-      uploadStatus: {
-        type: "progress",
-        message: isInstall ? `Installing ${file.name}…` : `Uploading ${file.name}…`,
-      },
-    });
+    this.setState({ uploadStatus: { type: "progress", message: isInstall ? `Installing ${file.name}…` : `Uploading ${file.name}…` } });
     const form = new FormData();
     form.append("file", file);
     fetch(endpoint, { method: "POST", body: form })
       .then((r) => r.json())
       .then((data) => {
         if (!data.ok) throw new Error(data.error || "Unknown error");
-        this.setState({
-          uploadStatus: {
-            type: "success",
-            message: isInstall ? `Installed ${file.name}` : `Saved to ${data.path}`,
-          },
-        });
+        this.setState({ uploadStatus: { type: "success", message: isInstall ? `Installed ${file.name}` : `Saved to ${data.path}` } });
       })
-      .catch((err) => {
-        this.setState({ uploadStatus: { type: "error", message: err.message } });
-      })
-      .finally(() => {
-        setTimeout(() => this.setState({ uploadStatus: null }), 5000);
-      });
+      .catch((err) => { this.setState({ uploadStatus: { type: "error", message: err.message } }); })
+      .finally(() => { setTimeout(() => this.setState({ uploadStatus: null }), 5000); });
   }
+
+  toggleLogcat = () => {
+    this.setState((prev) => ({ showLogcat: !prev.showLogcat }));
+  };
+
+  clearLogcat = () => {
+    this.setState((prev) => ({ logcatKey: prev.logcatKey + 1 }));
+  };
 
   render() {
     const { uri, auth, classes } = this.props;
-    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus } = this.state;
+    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus, showLogcat, logcatKey } = this.state;
     const isDragging = dragDepth > 0;
 
     const toastBg =
-      uploadStatus?.type === "success" ? "rgba(20,83,45,0.9)" :
-      uploadStatus?.type === "error"   ? "rgba(127,29,29,0.9)" :
-                                          "rgba(22,22,30,0.92)";
+      uploadStatus?.type === "success" ? "rgba(20,83,45,0.88)" :
+      uploadStatus?.type === "error"   ? "rgba(127,29,29,0.88)" :
+                                          "rgba(30,30,40,0.88)";
 
     return (
       <div className={classes.root}>
-        {/* ── top bar ─────────────────────────────────────────────────────── */}
+        {/* topbar */}
         <header className={classes.topbar}>
           <div className={classes.brand}>
             <div className={classes.brandDot} />
@@ -364,25 +258,24 @@ class EmulatorScreen extends React.Component {
           </div>
 
           <div className={classes.statusPill}>
-            <div className={classes.statusDot} style={{ background: dotColor(emuState), boxShadow: `0 0 6px ${dotColor(emuState)}` }} />
+            <div className={classes.statusDot} style={{ background: dotColor(emuState), boxShadow: `0 0 5px ${dotColor(emuState)}` }} />
             {emuState}
           </div>
 
           <div className={classes.toolbar}>
             <Tooltip title="WebRTC view" placement="bottom">
-              <button
-                className={`${classes.iconBtn} ${view === "webrtc" ? classes.iconBtnActive : ""}`}
-                onClick={() => this.setState({ view: "webrtc" })}
-              >
+              <button className={`${classes.iconBtn} ${view === "webrtc" ? classes.iconBtnActive : ""}`} onClick={() => this.setState({ view: "webrtc" })}>
                 <OndemandVideoIcon style={{ fontSize: 18 }} />
               </button>
             </Tooltip>
             <Tooltip title="Screenshot view" placement="bottom">
-              <button
-                className={`${classes.iconBtn} ${view === "png" ? classes.iconBtnActive : ""}`}
-                onClick={() => this.setState({ view: "png" })}
-              >
+              <button className={`${classes.iconBtn} ${view === "png" ? classes.iconBtnActive : ""}`} onClick={() => this.setState({ view: "png" })}>
                 <ImageIcon style={{ fontSize: 18 }} />
+              </button>
+            </Tooltip>
+            <Tooltip title={showLogcat ? "Hide logcat" : "Show logcat"} placement="bottom">
+              <button className={`${classes.iconBtn} ${showLogcat ? classes.iconBtnActive : ""}`} onClick={this.toggleLogcat}>
+                <TerminalIcon style={{ fontSize: 18 }} />
               </button>
             </Tooltip>
             <div className={classes.divider} />
@@ -394,79 +287,69 @@ class EmulatorScreen extends React.Component {
           </div>
         </header>
 
-        {/* ── main content ─────────────────────────────────────────────────── */}
+        {/* main */}
         <div className={classes.content}>
-          {/* Device */}
-          <div className={classes.devicePanel}>
-            <div className={classes.deviceFrame}>
-              <div className={classes.deviceNotch} />
-              <div
-                className={classes.emuWrapper}
-                onDragEnter={this.onDragEnter}
-                onDragOver={this.onDragOver}
-                onDragLeave={this.onDragLeave}
-                onDrop={this.onDrop}
-              >
-                <div className={classes.emuContainer}>
-                  <Emulator
-                    uri={uri}
-                    auth={auth}
-                    view={view}
-                    onStateChange={this.stateChange}
-                    onError={this.onError}
-                    muted={muted}
-                    volume={0}
-                    gps={gps}
-                    width={EMU_WIDTH}
-                    height={EMU_HEIGHT}
-                  />
-                </div>
-
-                {(isDragging || uploadStatus) && (
-                  <div className={classes.dropOverlay}>
-                    {isDragging ? (
-                      <>
-                        <div className={classes.dropIcon}>{dragIsApk ? "📦" : "📁"}</div>
-                        <div className={classes.dropLabel}>
-                          {dragIsApk ? "Drop to install APK" : "Drop to upload file"}
-                        </div>
-                        <div className={classes.dropSub}>
-                          {dragIsApk ? "adb install -r" : "→ /sdcard/Download/"}
-                        </div>
-                      </>
-                    ) : (
-                      <div
-                        className={classes.toastBar}
-                        style={{ backgroundColor: toastBg }}
-                      >
-                        {uploadStatus.type === "progress" && "⏳  "}
-                        {uploadStatus.type === "success"  && "✓  "}
-                        {uploadStatus.type === "error"    && "✗  "}
-                        {uploadStatus.message}
-                      </div>
-                    )}
-                  </div>
-                )}
+          {/* device */}
+          <div className={classes.deviceFrame}>
+            <div className={classes.deviceNotch} />
+            <div
+              className={classes.emuWrapper}
+              onDragEnter={this.onDragEnter}
+              onDragOver={this.onDragOver}
+              onDragLeave={this.onDragLeave}
+              onDrop={this.onDrop}
+            >
+              <div className={classes.emuContainer}>
+                <Emulator
+                  uri={uri} auth={auth} view={view}
+                  onStateChange={this.stateChange} onError={this.onError}
+                  muted={muted} volume={0} gps={gps}
+                  width={EMU_WIDTH} height={EMU_HEIGHT}
+                />
               </div>
-              <div className={classes.deviceHome} />
+
+              {(isDragging || uploadStatus) && (
+                <div className={classes.dropOverlay}>
+                  {isDragging ? (
+                    <>
+                      <div className={classes.dropIcon}>{dragIsApk ? "📦" : "📁"}</div>
+                      <div className={classes.dropLabel}>{dragIsApk ? "Drop to install APK" : "Drop to upload file"}</div>
+                      <div className={classes.dropSub}>{dragIsApk ? "adb install -r" : "→ /sdcard/Download/"}</div>
+                    </>
+                  ) : (
+                    <div className={classes.toastBar} style={{ backgroundColor: toastBg }}>
+                      {uploadStatus.type === "progress" && "⏳  "}
+                      {uploadStatus.type === "success"  && "✓  "}
+                      {uploadStatus.type === "error"    && "✗  "}
+                      {uploadStatus.message}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+            <div className={classes.deviceHome} />
           </div>
 
-          {/* Logcat */}
-          <div className={classes.logcatPanel}>
-            <div className={classes.logcatHeader}>
-              <div className={classes.logcatDot} />
-              Logcat
+          {/* logcat — only mounted when visible, so stream only runs when open */}
+          {showLogcat && (
+            <div className={classes.logcatPanel}>
+              <div className={classes.logcatHeader}>
+                <div className={classes.logcatTitle}>
+                  <div className={classes.logcatLiveDot} />
+                  Logcat
+                </div>
+                <button className={classes.logcatClear} onClick={this.clearLogcat}>
+                  Clear
+                </button>
+              </div>
+              <div className={classes.logcatBody}>
+                <LogcatView key={logcatKey} uri={uri} auth={auth} />
+              </div>
             </div>
-            <div className={classes.logcatBody}>
-              <LogcatView uri={uri} auth={auth} />
-            </div>
-          </div>
+          )}
         </div>
 
-        <div className={classes.footer}>
-          <Copyright />
-        </div>
+        <div className={classes.footer}><Copyright /></div>
       </div>
     );
   }
