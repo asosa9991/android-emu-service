@@ -1,0 +1,49 @@
+version: "3.8"
+
+networks:
+  envoymesh:
+    driver: bridge
+
+services:
+
+  emulator:
+    image: us-docker.pkg.dev/android-emulator-268719/images/${ANDROID_API_LEVEL:-30}-google-x64:latest
+    container_name: emulator_emulator
+    networks:
+      envoymesh:
+        aliases: [emulator]
+    devices:
+      - /dev/kvm:/dev/kvm
+    volumes:
+      - /etc/emulator/get-ice-config.sh:/get-ice-config.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "5555:5555"
+    environment:
+      - TURN=/get-ice-config.sh
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: emulator_nginx:latest
+    container_name: emulator_nginx
+    networks:
+      - envoymesh
+    restart: unless-stopped
+
+  envoy:
+    image: envoyproxy/envoy:v1.26-latest
+    container_name: emulator_envoy
+    networks:
+      - envoymesh
+    ports:
+      - "80:8080"
+      - "443:8080"
+      - "8080:8080"
+      - "8001:8001"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    restart: unless-stopped
