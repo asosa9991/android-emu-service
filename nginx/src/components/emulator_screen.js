@@ -277,6 +277,10 @@ class EmulatorScreen extends React.Component {
     logcatKey: 0,
     emuHeight: EMU_HEIGHT_DEFAULT,
     emuWidth: EMU_WIDTH_DEFAULT,
+    // committedWidth/Height are only updated on mouseup so <Emulator> props
+    // stay stable during drag (prevents touch coordinate remapping mid-drag)
+    committedHeight: EMU_HEIGHT_DEFAULT,
+    committedWidth: EMU_WIDTH_DEFAULT,
     isResizingH: false,
     isResizingW: false,
   };
@@ -303,7 +307,7 @@ class EmulatorScreen extends React.Component {
   onResizeHEnd = () => {
     document.removeEventListener("mousemove", this.onResizeHMove);
     document.removeEventListener("mouseup", this.onResizeHEnd);
-    this.setState({ isResizingH: false });
+    this.setState((prev) => ({ isResizingH: false, committedHeight: prev.emuHeight }));
   };
 
   // ── width resize ────────────────────────────────────────────────────────────
@@ -323,7 +327,7 @@ class EmulatorScreen extends React.Component {
   onResizeWEnd = () => {
     document.removeEventListener("mousemove", this.onResizeWMove);
     document.removeEventListener("mouseup", this.onResizeWEnd);
-    this.setState({ isResizingW: false });
+    this.setState((prev) => ({ isResizingW: false, committedWidth: prev.emuWidth }));
   };
 
   componentWillUnmount() {
@@ -381,7 +385,8 @@ class EmulatorScreen extends React.Component {
   render() {
     const { uri, auth, classes } = this.props;
     const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus,
-            showLogcat, logcatKey, emuHeight, emuWidth, isResizingH, isResizingW } = this.state;
+            showLogcat, logcatKey, emuHeight, emuWidth, committedHeight, committedWidth,
+            isResizingH, isResizingW } = this.state;
     const isDragging = dragDepth > 0;
     const frameWidth  = emuWidth  + BEZEL_SIDE * 2;
     const frameHeight = emuHeight + BEZEL_TOP  + BEZEL_BOTTOM;
@@ -455,7 +460,7 @@ class EmulatorScreen extends React.Component {
                     uri={uri} auth={auth} view={view}
                     onStateChange={this.stateChange} onError={this.onError}
                     muted={muted} volume={0} gps={gps}
-                    width={emuWidth} height={emuHeight}
+                    width={committedWidth} height={committedHeight}
                   />
                 </div>
 
