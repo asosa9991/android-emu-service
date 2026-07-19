@@ -24,6 +24,19 @@ services:
       - TURN=/get-ice-config.sh
     restart: unless-stopped
 
+  adb-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: emulator_adb_server:latest
+    container_name: emulator_adb_server
+    networks:
+      envoymesh:
+        aliases: [adb-server]
+    depends_on:
+      - emulator
+    restart: unless-stopped
+
   nginx:
     build:
       context: ./nginx

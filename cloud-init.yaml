@@ -2,7 +2,7 @@
 #cloud-config
 #
 # Bootstraps a GCE VM to run the Android Emulator with a WebRTC web UI.
-# Services started: coturn (TURN relay), emulator, nginx (React UI), envoy (gRPC-Web proxy).
+# Services: coturn (TURN relay), emulator, nginx (React UI), envoy (gRPC-Web proxy), adb-server (file upload/APK install).
 #
 # Expected VM: n2-standard-4 or larger, --enable-nested-virtualization, Ubuntu 22.04 LTS.
 
@@ -51,6 +51,11 @@ write_files:
                         max_stream_duration:
                           grpc_timeout_header_max: 0s
                     - match:
+                        prefix: "/api"
+                      route:
+                        cluster: adb_server
+                        timeout: 120s
+                    - match:
                         prefix: "/"
                       route:
                         cluster: nginx
@@ -60,7 +65,7 @@ write_files:
                           google_re2: {}
                           regex: ".*"
                       allow_methods: GET, PUT, DELETE, POST, OPTIONS
-                      allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization
+                      allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,content-length,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization
                       max_age: "1728000"
                       expose_headers: custom-header-1,grpc-status,grpc-message
                 http_filters:
@@ -101,6 +106,19 @@ write_files:
                     socket_address:
                       address: nginx
                       port_value: 80
+        - name: adb_server
+          connect_timeout: 0.25s
+          type: STRICT_DNS
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+            cluster_name: adb_server
+            endpoints:
+            - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: adb-server
+                      port_value: 3000
       admin:
         access_log_path: "/dev/stdout"
         address:
@@ -135,6 +153,18 @@ write_files:
           environment:
             - TURN=/get-ice-config.sh
           restart: unless-stopped
+        adb-server:
+          build:
+            context: ./server
+            dockerfile: Dockerfile
+          image: emulator_adb_server:latest
+          container_name: emulator_adb_server
+          networks:
+            envoymesh:
+              aliases: [adb-server]
+          depends_on:
+            - emulator
+          restart: unless-stopped
         nginx:
           image: emulator_nginx:latest
           container_name: emulator_nginx
@@ -154,6 +184,128 @@ write_files:
           volumes:
             - /opt/emulator/envoy.yaml:/etc/envoy/envoy.yaml:ro
           restart: unless-stopped
+
+  # ── adb-server: Dockerfile ───────────────────────────────────────────────────
+  - path: /opt/emulator/server/Dockerfile
+    permissions: "0644"
+    owner: root
+    content: |
+      FROM node:20-alpine
+      RUN apk add --no-cache android-tools
+      WORKDIR /app
+      COPY package.json ./
+      RUN npm install --production
+      COPY server.js start.sh ./
+      RUN chmod +x start.sh
+      EXPOSE 3000
+      CMD ["/app/start.sh"]
+
+  # ── adb-server: package.json ─────────────────────────────────────────────────
+  - path: /opt/emulator/server/package.json
+    permissions: "0644"
+    owner: root
+    content: |
+      {
+        "name": "adb-server",
+        "version": "1.0.0",
+        "dependencies": {
+          "express": "^4.18.2",
+          "multer": "^1.4.5-lts.1"
+        }
+      }
+
+  # ── adb-server: start.sh ─────────────────────────────────────────────────────
+  - path: /opt/emulator/server/start.sh
+    permissions: "0755"
+    owner: root
+    content: |
+      #!/bin/sh
+      set -e
+      echo "[adb-server] Starting ADB server..."
+      adb start-server
+      echo "[adb-server] Waiting for emulator ADB on emulator:5555..."
+      MAX_RETRIES=30
+      i=0
+      while [ $i -lt $MAX_RETRIES ]; do
+        if adb connect emulator:5555 2>&1 | grep -qE "connected|already connected"; then
+          echo "[adb-server] Connected"
+          break
+        fi
+        echo "[adb-server] Retrying in 5s... ($i/$MAX_RETRIES)"
+        sleep 5
+        i=$((i + 1))
+      done
+      adb devices
+      exec node server.js
+
+  # ── adb-server: server.js ────────────────────────────────────────────────────
+  - path: /opt/emulator/server/server.js
+    permissions: "0644"
+    owner: root
+    content: |
+      const express = require("express");
+      const multer = require("multer");
+      const { execFile } = require("child_process");
+      const fs = require("fs");
+      const path = require("path");
+
+      const app = express();
+      const PORT = 3000;
+      const DEVICE = "emulator:5555";
+
+      const storage = multer.diskStorage({
+        destination: "/tmp/uploads",
+        filename: (_req, file, cb) => {
+          const ext = path.extname(file.originalname) || "";
+          cb(null, `upload-${Date.now()}${ext}`);
+        },
+      });
+      const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
+
+      fs.mkdirSync("/tmp/uploads", { recursive: true });
+
+      function adb(...args) {
+        return new Promise((resolve, reject) => {
+          execFile("adb", ["-s", DEVICE, ...args], { timeout: 120000 }, (err, stdout, stderr) => {
+            if (err) reject(new Error(stderr || err.message));
+            else resolve(stdout);
+          });
+        });
+      }
+
+      function cleanup(p) { fs.unlink(p, () => {}); }
+
+      app.post("/api/upload", upload.single("file"), async (req, res) => {
+        if (!req.file) return res.status(400).json({ error: "No file provided" });
+        const localPath = req.file.path;
+        const remotePath = `/sdcard/Download/${req.file.originalname}`;
+        console.log(`[upload] ${req.file.originalname} -> ${remotePath}`);
+        try {
+          await adb("push", localPath, remotePath);
+          res.json({ ok: true, path: remotePath });
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        } finally { cleanup(localPath); }
+      });
+
+      app.post("/api/install", upload.single("file"), async (req, res) => {
+        if (!req.file) return res.status(400).json({ error: "No file provided" });
+        const localPath = req.file.path;
+        if (!req.file.originalname.toLowerCase().endsWith(".apk")) {
+          cleanup(localPath);
+          return res.status(400).json({ error: "File must be an APK" });
+        }
+        console.log(`[install] Installing ${req.file.originalname}...`);
+        try {
+          const output = await adb("install", "-r", localPath);
+          res.json({ ok: true, output: output.trim() });
+        } catch (err) {
+          res.status(500).json({ error: err.message });
+        } finally { cleanup(localPath); }
+      });
+
+      app.get("/api/health", (_req, res) => res.json({ ok: true }));
+      app.listen(PORT, () => console.log(`[adb-server] Listening on :${PORT}`));
 
   # ── nginx Dockerfile ─────────────────────────────────────────────────────────
   - path: /opt/emulator/nginx/Dockerfile
@@ -176,17 +328,6 @@ write_files:
       EXPOSE 80
       CMD ["nginx", "-g", "daemon off;"]
 
-  # ── React: config.js (no-auth, replaces generated file) ─────────────────────
-  - path: /opt/emulator/nginx/src/config.js
-    permissions: "0644"
-    owner: root
-    content: |
-      export const config = {
-        auth: {
-          type: "none"
-        }
-      };
-
   # ── patch.js: npm package fixes ──────────────────────────────────────────────
   - path: /opt/emulator/nginx/patch.js
     permissions: "0644"
@@ -203,7 +344,7 @@ write_files:
 
       // Fix 2: jsep_protocol_driver.js - inject TURN/STUN servers.
       // signal.start is a GUID string, so RTCPeerConnection gets no ICE servers.
-      // TURN host is window.location.hostname so no IP is baked into the image.
+      // TURN host uses window.location.hostname so no IP is baked into the image.
       var jsepFile = 'node_modules/android-emulator-webrtc/src/components/emulator/net/jsep_protocol_driver.js';
       var jsep = fs.readFileSync(jsepFile, 'utf8');
       var oldLine = 'this.peerConnection = new RTCPeerConnection(signal.start);';
@@ -219,7 +360,14 @@ write_files:
       if (jsepPatched === jsep) { console.log('WARNING: jsep patch not applied'); }
       else { fs.writeFileSync(jsepFile, jsepPatched); console.log('Patched jsep_protocol_driver.js'); }
 
-  # ── React: App.js (no-auth, race-condition-free) ─────────────────────────────
+  # ── React: config.js ─────────────────────────────────────────────────────────
+  - path: /opt/emulator/nginx/src/config.js
+    permissions: "0644"
+    owner: root
+    content: |
+      export const config = { auth: { type: "none" } };
+
+  # ── React: App.js ────────────────────────────────────────────────────────────
   - path: /opt/emulator/nginx/src/App.js
     permissions: "0644"
     owner: root
@@ -228,7 +376,7 @@ write_files:
       import { TokenProviderService } from "./service/auth_service";
       import EmulatorScreen from "./components/emulator_screen";
       import LoginPage from "./components/login_firebase";
-      import { ThemeProvider, makeStyles } from "@mui/styles";
+      import { ThemeProvider } from "@mui/styles";
       import { createTheme } from "@mui/material/styles";
       import { config } from "./config";
       import "./App.css";
@@ -243,9 +391,7 @@ write_files:
 
       export default function App() {
         const [authorized, setAuthorized] = useState(noAuth);
-        useEffect(() => {
-          auth.on("authorized", (a) => setAuthorized(a));
-        }, []);
+        useEffect(() => { auth.on("authorized", (a) => setAuthorized(a)); }, []);
         return (
           <ThemeProvider theme={theme}>
             {authorized ? <EmulatorScreen uri={EMULATOR_GRPC} auth={auth} /> : <LoginPage auth={auth} />}
@@ -253,7 +399,7 @@ write_files:
         );
       }
 
-  # ── React: login_firebase.js (no-auth bypass) ────────────────────────────────
+  # ── React: login_firebase.js ─────────────────────────────────────────────────
   - path: /opt/emulator/nginx/src/components/login_firebase.js
     permissions: "0644"
     owner: root
@@ -278,7 +424,7 @@ write_files:
       }
       AutoLogin.propTypes = { auth: PropTypes.object.isRequired };
 
-  # ── React: emulator_screen.js ────────────────────────────────────────────────
+  # ── React: emulator_screen.js (drag-and-drop + APK install) ─────────────────
   - path: /opt/emulator/nginx/src/components/emulator_screen.js
     permissions: "0644"
     owner: root
@@ -304,44 +450,115 @@ write_files:
       const styles = () => ({
         root: { flexGrow: 1 },
         title: { flexGrow: 1 },
-        emuContainer: {
+        emuWrapper: {
+          position: "relative",
           width: EMU_WIDTH,
           height: EMU_HEIGHT,
+          flexShrink: 0,
+        },
+        emuContainer: {
+          width: "100%",
+          height: "100%",
           "& > div": { width: "100% !important", height: "100% !important" },
           "& video": { width: "100% !important", height: "100% !important" },
           "& canvas": { width: "100% !important", height: "100% !important" },
         },
+        dropOverlay: {
+          position: "absolute",
+          top: 0, left: 0, width: "100%", height: "100%",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          backgroundColor: "rgba(0,0,0,0.65)",
+          color: "#fff", fontSize: 20, fontWeight: "bold",
+          borderRadius: 4, gap: 12, zIndex: 10,
+          pointerEvents: "none",
+        },
+        dropIcon: { fontSize: 56, lineHeight: 1 },
+        statusBar: {
+          padding: "6px 14px", borderRadius: 4, fontSize: 13,
+          fontWeight: "normal", maxWidth: EMU_WIDTH - 32,
+          wordBreak: "break-all", textAlign: "center",
+        },
       });
 
       class EmulatorScreen extends React.Component {
-        state = { view: "webrtc", emuState: "connecting", muted: true };
+        state = {
+          view: "webrtc", emuState: "connecting", muted: true,
+          gps: { latitude: 37.4221, longitude: -122.0841 },
+          dragDepth: 0, dragIsApk: false, uploadStatus: null,
+        };
         static propTypes = { uri: PropTypes.string, auth: PropTypes.object };
         stateChange = (s) => this.setState({ emuState: s });
         onError = (err) => console.error("gRPC error:", err);
+
+        onDragEnter = (e) => {
+          e.preventDefault();
+          const isApk = [...(e.dataTransfer.items || [])].some(
+            (i) => i.kind === "file" && i.type === "application/vnd.android.package-archive"
+          );
+          this.setState((prev) => ({ dragDepth: prev.dragDepth + 1, dragIsApk: isApk }));
+        };
+        onDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; };
+        onDragLeave = (e) => {
+          e.preventDefault();
+          this.setState((prev) => ({ dragDepth: Math.max(0, prev.dragDepth - 1) }));
+        };
+        onDrop = (e) => {
+          e.preventDefault();
+          this.setState({ dragDepth: 0 });
+          const file = e.dataTransfer.files[0];
+          if (!file) return;
+          this._upload(file, file.name.toLowerCase().endsWith(".apk") ? "/api/install" : "/api/upload");
+        };
+
+        _upload(file, endpoint) {
+          const isInstall = endpoint === "/api/install";
+          this.setState({ uploadStatus: { type: "progress", message: isInstall ? `Installing ${file.name}...` : `Uploading ${file.name} to /sdcard/Download/...` } });
+          const form = new FormData();
+          form.append("file", file);
+          fetch(endpoint, { method: "POST", body: form })
+            .then((r) => r.json())
+            .then((data) => {
+              if (!data.ok) throw new Error(data.error || "Unknown error");
+              this.setState({ uploadStatus: { type: "success", message: isInstall ? `Installed ${file.name}` : `Saved to ${data.path}` } });
+            })
+            .catch((err) => { this.setState({ uploadStatus: { type: "error", message: err.message } }); })
+            .finally(() => { setTimeout(() => this.setState({ uploadStatus: null }), 5000); });
+        }
+
         render() {
           const { uri, auth, classes } = this.props;
-          const { view, emuState, muted } = this.state;
+          const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus } = this.state;
+          const isDragging = dragDepth > 0;
+          const statusBg = uploadStatus?.type === "success" ? "rgba(46,125,50,0.9)" : uploadStatus?.type === "error" ? "rgba(183,28,28,0.9)" : "rgba(30,30,30,0.85)";
           return (
             <div className={classes.root}>
               <AppBar position="static">
                 <Toolbar>
-                  <Typography variant="h6" className={classes.title}>
-                    Android Emulator — {view} — {emuState}
-                  </Typography>
+                  <Typography variant="h6" className={classes.title}>Android Emulator — {view} — {emuState}</Typography>
                   <IconButton color="inherit" onClick={() => this.setState({ view: "webrtc" })} size="large"><OndemandVideoIcon /></IconButton>
                   <IconButton color="inherit" onClick={() => this.setState({ view: "png" })} size="large"><ImageIcon /></IconButton>
                   <IconButton color="inherit" onClick={() => auth.logout()} size="large"><ExitToApp /></IconButton>
                 </Toolbar>
               </AppBar>
               <Box p={2} display="flex" gap={2}>
-                <div className={classes.emuContainer}>
-                  <Emulator uri={uri} auth={auth} view={view}
-                    onStateChange={this.stateChange} onError={this.onError}
-                    muted={muted} volume={0} width={EMU_WIDTH} height={EMU_HEIGHT} />
+                <div className={classes.emuWrapper} onDragEnter={this.onDragEnter} onDragOver={this.onDragOver} onDragLeave={this.onDragLeave} onDrop={this.onDrop}>
+                  <div className={classes.emuContainer}>
+                    <Emulator uri={uri} auth={auth} view={view} onStateChange={this.stateChange} onError={this.onError} muted={muted} volume={0} gps={gps} width={EMU_WIDTH} height={EMU_HEIGHT} />
+                  </div>
+                  {(isDragging || uploadStatus) && (
+                    <div className={classes.dropOverlay}>
+                      {isDragging ? (
+                        <><div className={classes.dropIcon}>{dragIsApk ? "📦" : "📁"}</div><div>{dragIsApk ? "Drop to Install APK" : "Drop to Upload to /sdcard/Download/"}</div></>
+                      ) : (
+                        <div className={classes.statusBar} style={{ backgroundColor: statusBg }}>
+                          {uploadStatus.type === "progress" && "⏳ "}{uploadStatus.type === "success" && "✓ "}{uploadStatus.type === "error" && "✗ "}{uploadStatus.message}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <Box flex={1} minWidth={300} maxWidth={500}>
-                  <LogcatView uri={uri} auth={auth} />
-                </Box>
+                <Box flex={1} minWidth={300} maxWidth={500}><LogcatView uri={uri} auth={auth} /></Box>
               </Box>
               <Box mt={4}><Copyright /></Box>
             </div>
@@ -373,7 +590,6 @@ write_files:
       WantedBy=multi-user.target
 
 runcmd:
-  # All setup in a single shell so variables (EXTERNAL_IP) persist across steps.
   - |
     set -e
 
@@ -412,7 +628,8 @@ runcmd:
     # Enable Docker
     systemctl enable docker && systemctl start docker
 
-    # Build the nginx image (~3-4 min: clones repo, npm install, React build)
+    # Build images
+    docker build -t emulator_adb_server:latest /opt/emulator/server
     docker build -t emulator_nginx:latest /opt/emulator/nginx
 
     # Start all services

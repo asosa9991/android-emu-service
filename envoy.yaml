@@ -31,6 +31,11 @@ static_resources:
                   max_stream_duration:
                     grpc_timeout_header_max: 0s
               - match:
+                  prefix: "/api"
+                route:
+                  cluster: adb_server
+                  timeout: 120s
+              - match:
                   prefix: "/"
                 route:
                   cluster: nginx
@@ -40,7 +45,7 @@ static_resources:
                     google_re2: {}
                     regex: ".*"
                 allow_methods: GET, PUT, DELETE, POST, OPTIONS
-                allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization
+                allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,content-length,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization
                 max_age: "1728000"
                 expose_headers: custom-header-1,grpc-status,grpc-message
           http_filters:
@@ -81,6 +86,19 @@ static_resources:
               socket_address:
                 address: nginx
                 port_value: 80
+  - name: adb_server
+    connect_timeout: 0.25s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: adb_server
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: adb-server
+                port_value: 3000
 admin:
   access_log_path: "/dev/stdout"
   address:
