@@ -80,35 +80,27 @@ const styles = () => ({
 
   // ── device frame ───────────────────────────────────────────────────────────
   deviceFrame: {
-    width: EMU_WIDTH + 24,
-    borderRadius: 44,
-    background: "linear-gradient(160deg, #2a2a35 0%, #1a1a22 100%)",
-    boxShadow: [
-      "0 0 0 1px rgba(255,255,255,0.08)",
-      "0 2px 4px rgba(0,0,0,0.2)",
-      "0 12px 40px rgba(0,0,0,0.25)",
-      "0 32px 80px rgba(0,0,0,0.15)",
-    ].join(", "),
-    padding: "22px 12px 18px",
-  },
-  deviceNotch: {
-    width: 100, height: 6, borderRadius: 3,
-    background: "rgba(255,255,255,0.1)", margin: "0 auto 14px",
+    display: "flex",
+    flexDirection: "column",
   },
   emuWrapper: {
     position: "relative",
     width: EMU_WIDTH, height: EMU_HEIGHT,
-    borderRadius: 28, overflow: "hidden", background: "#000",
+    borderRadius: 32,
+    overflow: "hidden",
+    background: "#000",
+    boxShadow: [
+      "0 0 0 1px rgba(0,0,0,0.12)",
+      "0 4px 12px rgba(0,0,0,0.15)",
+      "0 16px 48px rgba(0,0,0,0.2)",
+      "0 32px 80px rgba(0,0,0,0.12)",
+    ].join(", "),
   },
   emuContainer: {
     width: "100%", height: "100%",
     "& > div": { width: "100% !important", height: "100% !important" },
     "& video": { width: "100% !important", height: "100% !important" },
     "& canvas": { width: "100% !important", height: "100% !important" },
-  },
-  deviceHome: {
-    width: 44, height: 4, borderRadius: 2,
-    background: "rgba(255,255,255,0.15)", margin: "12px auto 0",
   },
 
   // ── drag overlay ───────────────────────────────────────────────────────────
@@ -132,7 +124,7 @@ const styles = () => ({
 
   // ── logcat panel ───────────────────────────────────────────────────────────
   logcatPanel: {
-    width: EMU_WIDTH + 24,
+    width: EMU_WIDTH,
     height: LOGCAT_HEIGHT,
     background: "#fff",
     borderRadius: 16,
@@ -291,7 +283,6 @@ class EmulatorScreen extends React.Component {
         <div className={classes.content}>
           {/* device */}
           <div className={classes.deviceFrame}>
-            <div className={classes.deviceNotch} />
             <div
               className={classes.emuWrapper}
               onDragEnter={this.onDragEnter}
@@ -327,7 +318,6 @@ class EmulatorScreen extends React.Component {
                 </div>
               )}
             </div>
-            <div className={classes.deviceHome} />
           </div>
 
           {/* logcat — only mounted when visible, so stream only runs when open */}
