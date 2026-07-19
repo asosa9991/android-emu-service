@@ -14,6 +14,13 @@ const EMU_WIDTH = 390;
 const EMU_HEIGHT = 720;
 const LOGCAT_HEIGHT = 280;
 
+// Phone frame bezels — screen is pinned absolutely inside the frame
+const BEZEL_TOP = 48;    // top bezel (notch area)
+const BEZEL_BOTTOM = 22; // bottom bezel (home indicator)
+const BEZEL_SIDE = 12;   // left/right bezel
+const FRAME_WIDTH = EMU_WIDTH + BEZEL_SIDE * 2;
+const FRAME_HEIGHT = BEZEL_TOP + EMU_HEIGHT + BEZEL_BOTTOM;
+
 const styles = () => ({
   root: {
     minHeight: "100vh",
@@ -79,28 +86,54 @@ const styles = () => ({
   },
 
   // ── device frame ───────────────────────────────────────────────────────────
+  // The screen (emuWrapper) is absolutely positioned inside the frame so
+  // bezel decoration and video content are always perfectly aligned.
   deviceFrame: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  emuWrapper: {
     position: "relative",
-    width: EMU_WIDTH, height: EMU_HEIGHT,
-    borderRadius: 32,
+    width: FRAME_WIDTH,
+    height: FRAME_HEIGHT,
+    borderRadius: 44,
+    background: "linear-gradient(160deg, #2a2a35 0%, #1a1a22 100%)",
+    boxShadow: [
+      "0 0 0 1px rgba(255,255,255,0.06)",
+      "0 4px 12px rgba(0,0,0,0.2)",
+      "0 16px 48px rgba(0,0,0,0.25)",
+      "0 32px 80px rgba(0,0,0,0.15)",
+    ].join(", "),
+    flexShrink: 0,
+  },
+  deviceNotch: {
+    position: "absolute",
+    top: 18,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: 100, height: 6, borderRadius: 3,
+    background: "rgba(255,255,255,0.12)",
+  },
+  // The screen area — pinned to exact pixel coordinates within the frame
+  emuWrapper: {
+    position: "absolute",
+    top: BEZEL_TOP,
+    left: BEZEL_SIDE,
+    width: EMU_WIDTH,
+    height: EMU_HEIGHT,
+    borderRadius: 20,
     overflow: "hidden",
     background: "#000",
-    boxShadow: [
-      "0 0 0 1px rgba(0,0,0,0.12)",
-      "0 4px 12px rgba(0,0,0,0.15)",
-      "0 16px 48px rgba(0,0,0,0.2)",
-      "0 32px 80px rgba(0,0,0,0.12)",
-    ].join(", "),
   },
   emuContainer: {
     width: "100%", height: "100%",
     "& > div": { width: "100% !important", height: "100% !important" },
     "& video": { width: "100% !important", height: "100% !important" },
     "& canvas": { width: "100% !important", height: "100% !important" },
+  },
+  deviceHome: {
+    position: "absolute",
+    bottom: 8,
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: 44, height: 4, borderRadius: 2,
+    background: "rgba(255,255,255,0.18)",
   },
 
   // ── drag overlay ───────────────────────────────────────────────────────────
@@ -124,7 +157,7 @@ const styles = () => ({
 
   // ── logcat panel ───────────────────────────────────────────────────────────
   logcatPanel: {
-    width: EMU_WIDTH,
+    width: FRAME_WIDTH,
     height: LOGCAT_HEIGHT,
     background: "#fff",
     borderRadius: 16,
@@ -283,6 +316,7 @@ class EmulatorScreen extends React.Component {
         <div className={classes.content}>
           {/* device */}
           <div className={classes.deviceFrame}>
+            <div className={classes.deviceNotch} />
             <div
               className={classes.emuWrapper}
               onDragEnter={this.onDragEnter}
@@ -318,6 +352,7 @@ class EmulatorScreen extends React.Component {
                 </div>
               )}
             </div>
+            <div className={classes.deviceHome} />
           </div>
 
           {/* logcat — only mounted when visible, so stream only runs when open */}
