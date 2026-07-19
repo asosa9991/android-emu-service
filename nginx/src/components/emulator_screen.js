@@ -7,6 +7,7 @@ import OndemandVideoIcon from "@mui/icons-material/OndemandVideo";
 import ImageIcon from "@mui/icons-material/Image";
 import LogoutIcon from "@mui/icons-material/Logout";
 import TerminalIcon from "@mui/icons-material/Terminal";
+import CameraAltIcon from "@mui/icons-material/CameraAlt";
 import Tooltip from "@mui/material/Tooltip";
 import Copyright from "./copyright";
 
@@ -255,6 +256,13 @@ class EmulatorScreen extends React.Component {
       .finally(() => { setTimeout(() => this.setState({ uploadStatus: null }), 5000); });
   }
 
+  takeScreenshot = () => {
+    const a = document.createElement("a");
+    a.href = `/api/screenshot?t=${Date.now()}`;
+    a.download = `screenshot-${Date.now()}.png`;
+    a.click();
+  };
+
   toggleLogcat = () => {
     this.setState((prev) => ({ showLogcat: !prev.showLogcat }));
   };
@@ -296,6 +304,11 @@ class EmulatorScreen extends React.Component {
             <Tooltip title="Screenshot view" placement="bottom">
               <button className={`${classes.iconBtn} ${view === "png" ? classes.iconBtnActive : ""}`} onClick={() => this.setState({ view: "png" })}>
                 <ImageIcon style={{ fontSize: 18 }} />
+              </button>
+            </Tooltip>
+            <Tooltip title="Screenshot" placement="bottom">
+              <button className={classes.iconBtn} onClick={this.takeScreenshot}>
+                <CameraAltIcon style={{ fontSize: 18 }} />
               </button>
             </Tooltip>
             <Tooltip title={showLogcat ? "Hide logcat" : "Show logcat"} placement="bottom">

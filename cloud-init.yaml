@@ -1,4 +1,3 @@
-## template: jinja
 #cloud-config
 #
 # Bootstraps a GCE VM to run the Android Emulator with a WebRTC web UI.
@@ -302,6 +301,16 @@ write_files:
         } catch (err) {
           res.status(500).json({ error: err.message });
         } finally { cleanup(localPath); }
+      });
+
+      app.get("/api/screenshot", (_req, res) => {
+        execFile("adb", ["-s", DEVICE, "shell", "screencap", "-p"], { timeout: 10000, encoding: "buffer" }, (err, stdout) => {
+          if (err) return res.status(500).json({ error: err.message });
+          const filename = `screenshot-${Date.now()}.png`;
+          res.set("Content-Type", "image/png");
+          res.set("Content-Disposition", `attachment; filename="${filename}"`);
+          res.send(stdout);
+        });
       });
 
       app.get("/api/health", (_req, res) => res.json({ ok: true }));

@@ -10,10 +10,10 @@
 
 set -e
 
-ZONE="us-central1-a"
-PROJECT="emuservice"
-HOST="android-emulator-host"
-REMOTE_DIR="/home/vijayakella/emu-service"
+ZONE="us-east1-b"
+PROJECT="android-emu-svc"
+HOST="android-emu-30"
+REMOTE_DIR="/opt/emulator"
 
 echo "=== Copying source files to instance ==="
 gcloud compute scp \

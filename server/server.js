@@ -74,6 +74,20 @@ app.post("/api/install", upload.single("file"), async (req, res) => {
   }
 });
 
+// Capture a screenshot and return it as a PNG download
+app.get("/api/screenshot", (_req, res) => {
+  execFile("adb", ["-s", DEVICE, "shell", "screencap", "-p"], { timeout: 10000, encoding: "buffer" }, (err, stdout) => {
+    if (err) {
+      console.error("[screenshot] Error:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    const filename = `screenshot-${Date.now()}.png`;
+    res.set("Content-Type", "image/png");
+    res.set("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(stdout);
+  });
+});
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => console.log(`[adb-server] Listening on :${PORT}`));
