@@ -12,7 +12,9 @@ import Tooltip from "@mui/material/Tooltip";
 import Copyright from "./copyright";
 
 const EMU_WIDTH = 390;
-const EMU_HEIGHT = 720;
+const EMU_HEIGHT_DEFAULT = 720;
+const EMU_HEIGHT_MIN = 400;
+const EMU_HEIGHT_MAX = 1200;
 const LOGCAT_HEIGHT = 280;
 
 // Phone frame bezels — screen is pinned absolutely inside the frame
@@ -20,7 +22,6 @@ const BEZEL_TOP = 48;    // top bezel (notch area)
 const BEZEL_BOTTOM = 22; // bottom bezel (home indicator)
 const BEZEL_SIDE = 12;   // left/right bezel
 const FRAME_WIDTH = EMU_WIDTH + BEZEL_SIDE * 2;
-const FRAME_HEIGHT = BEZEL_TOP + EMU_HEIGHT + BEZEL_BOTTOM;
 
 const styles = () => ({
   root: {
@@ -92,7 +93,7 @@ const styles = () => ({
   deviceFrame: {
     position: "relative",
     width: FRAME_WIDTH,
-    height: FRAME_HEIGHT,
+    // height set inline (dynamic)
     borderRadius: 44,
     background: "linear-gradient(160deg, #2a2a35 0%, #1a1a22 100%)",
     boxShadow: [
@@ -117,7 +118,7 @@ const styles = () => ({
     top: BEZEL_TOP,
     left: BEZEL_SIDE,
     width: EMU_WIDTH,
-    height: EMU_HEIGHT,
+    // height set inline (dynamic)
     borderRadius: 20,
     overflow: "hidden",
     background: "#000",
@@ -190,6 +191,38 @@ const styles = () => ({
   },
   logcatBody: { flex: 1, overflow: "hidden" },
 
+  // ── resize handle ──────────────────────────────────────────────────────────
+  resizeHandle: {
+    width: FRAME_WIDTH,
+    height: 20,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "ns-resize",
+    userSelect: "none",
+    flexShrink: 0,
+    marginTop: -6,
+  },
+  resizeBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    background: "rgba(0,0,0,0.12)",
+    transition: "background 0.15s, width 0.15s",
+    "&:hover": { background: "rgba(99,102,241,0.45)", width: 52 },
+  },
+  resizeLabel: {
+    position: "absolute",
+    fontSize: 10,
+    fontWeight: 600,
+    color: "#6366f1",
+    letterSpacing: "0.04em",
+    marginTop: 18,
+    opacity: 0,
+    transition: "opacity 0.15s",
+  },
+  resizeLabelVisible: { opacity: 1 },
+
   footer: {
     padding: "16px 24px",
     borderTop: "1px solid rgba(0,0,0,0.06)",
@@ -214,12 +247,40 @@ class EmulatorScreen extends React.Component {
     uploadStatus: null,
     showLogcat: false,
     logcatKey: 0, // increment to reset/clear logcat
+    emuHeight: EMU_HEIGHT_DEFAULT,
+    isResizing: false,
   };
 
   static propTypes = { uri: PropTypes.string, auth: PropTypes.object };
 
   stateChange = (s) => this.setState({ emuState: s });
   onError = (err) => console.error("gRPC error:", err);
+
+  onResizeStart = (e) => {
+    e.preventDefault();
+    this._resizeStartY = e.clientY;
+    this._resizeStartH = this.state.emuHeight;
+    document.addEventListener("mousemove", this.onResizeMove);
+    document.addEventListener("mouseup", this.onResizeEnd);
+    this.setState({ isResizing: true });
+  };
+
+  onResizeMove = (e) => {
+    const delta = e.clientY - this._resizeStartY;
+    const newH = Math.min(EMU_HEIGHT_MAX, Math.max(EMU_HEIGHT_MIN, this._resizeStartH + delta));
+    this.setState({ emuHeight: newH });
+  };
+
+  onResizeEnd = () => {
+    document.removeEventListener("mousemove", this.onResizeMove);
+    document.removeEventListener("mouseup", this.onResizeEnd);
+    this.setState({ isResizing: false });
+  };
+
+  componentWillUnmount() {
+    document.removeEventListener("mousemove", this.onResizeMove);
+    document.removeEventListener("mouseup", this.onResizeEnd);
+  }
 
   onDragEnter = (e) => {
     e.preventDefault();
@@ -273,8 +334,9 @@ class EmulatorScreen extends React.Component {
 
   render() {
     const { uri, auth, classes } = this.props;
-    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus, showLogcat, logcatKey } = this.state;
+    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus, showLogcat, logcatKey, emuHeight, isResizing } = this.state;
     const isDragging = dragDepth > 0;
+    const frameHeight = BEZEL_TOP + emuHeight + BEZEL_BOTTOM;
 
     const toastBg =
       uploadStatus?.type === "success" ? "rgba(20,83,45,0.88)" :
@@ -328,10 +390,11 @@ class EmulatorScreen extends React.Component {
         {/* main */}
         <div className={classes.content}>
           {/* device */}
-          <div className={classes.deviceFrame}>
+          <div className={classes.deviceFrame} style={{ height: frameHeight }}>
             <div className={classes.deviceNotch} />
             <div
               className={classes.emuWrapper}
+              style={{ height: emuHeight }}
               onDragEnter={this.onDragEnter}
               onDragOver={this.onDragOver}
               onDragLeave={this.onDragLeave}
@@ -342,7 +405,7 @@ class EmulatorScreen extends React.Component {
                   uri={uri} auth={auth} view={view}
                   onStateChange={this.stateChange} onError={this.onError}
                   muted={muted} volume={0} gps={gps}
-                  width={EMU_WIDTH} height={EMU_HEIGHT}
+                  width={EMU_WIDTH} height={emuHeight}
                 />
               </div>
 
@@ -366,6 +429,20 @@ class EmulatorScreen extends React.Component {
               )}
             </div>
             <div className={classes.deviceHome} />
+          </div>
+
+          {/* resize handle */}
+          <div
+            className={classes.resizeHandle}
+            onMouseDown={this.onResizeStart}
+            style={{ cursor: isResizing ? "ns-resize" : "ns-resize" }}
+          >
+            <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div className={classes.resizeBar} />
+              <span className={`${classes.resizeLabel} ${isResizing ? classes.resizeLabelVisible : ""}`}>
+                {emuHeight}px
+              </span>
+            </div>
           </div>
 
           {/* logcat — only mounted when visible, so stream only runs when open */}
