@@ -11,17 +11,18 @@ import CameraAltIcon from "@mui/icons-material/CameraAlt";
 import Tooltip from "@mui/material/Tooltip";
 import Copyright from "./copyright";
 
-const EMU_WIDTH = 390;
+const EMU_WIDTH_DEFAULT  = 390;
+const EMU_WIDTH_MIN      = 280;
+const EMU_WIDTH_MAX      = 600;
 const EMU_HEIGHT_DEFAULT = 720;
-const EMU_HEIGHT_MIN = 400;
-const EMU_HEIGHT_MAX = 1200;
-const LOGCAT_HEIGHT = 280;
+const EMU_HEIGHT_MIN     = 400;
+const EMU_HEIGHT_MAX     = 1200;
+const LOGCAT_HEIGHT      = 280;
 
 // Phone frame bezels — screen is pinned absolutely inside the frame
-const BEZEL_TOP = 48;    // top bezel (notch area)
-const BEZEL_BOTTOM = 22; // bottom bezel (home indicator)
-const BEZEL_SIDE = 12;   // left/right bezel
-const FRAME_WIDTH = EMU_WIDTH + BEZEL_SIDE * 2;
+const BEZEL_TOP    = 48;  // top bezel (notch area)
+const BEZEL_BOTTOM = 22;  // bottom bezel (home indicator)
+const BEZEL_SIDE   = 12;  // left/right bezel
 
 const styles = () => ({
   root: {
@@ -87,13 +88,18 @@ const styles = () => ({
     gap: 20,
   },
 
+  // ── device row: frame + right width-handle side by side ────────────────────
+  deviceRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "stretch",
+    flexShrink: 0,
+  },
+
   // ── device frame ───────────────────────────────────────────────────────────
-  // The screen (emuWrapper) is absolutely positioned inside the frame so
-  // bezel decoration and video content are always perfectly aligned.
+  // width + height set inline (dynamic)
   deviceFrame: {
     position: "relative",
-    width: FRAME_WIDTH,
-    // height set inline (dynamic)
     borderRadius: 44,
     background: "linear-gradient(160deg, #2a2a35 0%, #1a1a22 100%)",
     boxShadow: [
@@ -113,12 +119,11 @@ const styles = () => ({
     background: "rgba(255,255,255,0.12)",
   },
   // The screen area — pinned to exact pixel coordinates within the frame
+  // width + height set inline (dynamic)
   emuWrapper: {
     position: "absolute",
     top: BEZEL_TOP,
     left: BEZEL_SIDE,
-    width: EMU_WIDTH,
-    // height set inline (dynamic)
     borderRadius: 20,
     overflow: "hidden",
     background: "#000",
@@ -158,8 +163,8 @@ const styles = () => ({
   },
 
   // ── logcat panel ───────────────────────────────────────────────────────────
+  // width set inline (dynamic)
   logcatPanel: {
-    width: FRAME_WIDTH,
     height: LOGCAT_HEIGHT,
     background: "#fff",
     borderRadius: 16,
@@ -191,9 +196,9 @@ const styles = () => ({
   },
   logcatBody: { flex: 1, overflow: "hidden" },
 
-  // ── resize handle ──────────────────────────────────────────────────────────
-  resizeHandle: {
-    width: FRAME_WIDTH,
+  // ── resize handles ─────────────────────────────────────────────────────────
+  // Height handle — horizontal bar below the device row
+  resizeHandleH: {
     height: 20,
     display: "flex",
     alignItems: "center",
@@ -203,7 +208,7 @@ const styles = () => ({
     flexShrink: 0,
     marginTop: -6,
   },
-  resizeBar: {
+  resizeBarH: {
     width: 36,
     height: 4,
     borderRadius: 2,
@@ -211,15 +216,38 @@ const styles = () => ({
     transition: "background 0.15s, width 0.15s",
     "&:hover": { background: "rgba(99,102,241,0.45)", width: 52 },
   },
+
+  // Width handle — vertical bar to the right of the device frame
+  resizeHandleW: {
+    width: 20,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "ew-resize",
+    userSelect: "none",
+    flexShrink: 0,
+    marginLeft: -6,
+  },
+  resizeBarW: {
+    width: 4,
+    height: 36,
+    borderRadius: 2,
+    background: "rgba(0,0,0,0.12)",
+    transition: "background 0.15s, height 0.15s",
+    "&:hover": { background: "rgba(99,102,241,0.45)", height: 52 },
+  },
+
+  // Dimension label shown while dragging
   resizeLabel: {
     position: "absolute",
     fontSize: 10,
     fontWeight: 600,
     color: "#6366f1",
     letterSpacing: "0.04em",
-    marginTop: 18,
     opacity: 0,
     transition: "opacity 0.15s",
+    pointerEvents: "none",
+    whiteSpace: "nowrap",
   },
   resizeLabelVisible: { opacity: 1 },
 
@@ -246,9 +274,11 @@ class EmulatorScreen extends React.Component {
     dragIsApk: false,
     uploadStatus: null,
     showLogcat: false,
-    logcatKey: 0, // increment to reset/clear logcat
+    logcatKey: 0,
     emuHeight: EMU_HEIGHT_DEFAULT,
-    isResizing: false,
+    emuWidth: EMU_WIDTH_DEFAULT,
+    isResizingH: false,
+    isResizingW: false,
   };
 
   static propTypes = { uri: PropTypes.string, auth: PropTypes.object };
@@ -256,30 +286,51 @@ class EmulatorScreen extends React.Component {
   stateChange = (s) => this.setState({ emuState: s });
   onError = (err) => console.error("gRPC error:", err);
 
-  onResizeStart = (e) => {
+  // ── height resize ───────────────────────────────────────────────────────────
+  onResizeHStart = (e) => {
     e.preventDefault();
     this._resizeStartY = e.clientY;
     this._resizeStartH = this.state.emuHeight;
-    document.addEventListener("mousemove", this.onResizeMove);
-    document.addEventListener("mouseup", this.onResizeEnd);
-    this.setState({ isResizing: true });
+    document.addEventListener("mousemove", this.onResizeHMove);
+    document.addEventListener("mouseup", this.onResizeHEnd);
+    this.setState({ isResizingH: true });
   };
-
-  onResizeMove = (e) => {
-    const delta = e.clientY - this._resizeStartY;
-    const newH = Math.min(EMU_HEIGHT_MAX, Math.max(EMU_HEIGHT_MIN, this._resizeStartH + delta));
+  onResizeHMove = (e) => {
+    const newH = Math.min(EMU_HEIGHT_MAX, Math.max(EMU_HEIGHT_MIN,
+      this._resizeStartH + (e.clientY - this._resizeStartY)));
     this.setState({ emuHeight: newH });
   };
+  onResizeHEnd = () => {
+    document.removeEventListener("mousemove", this.onResizeHMove);
+    document.removeEventListener("mouseup", this.onResizeHEnd);
+    this.setState({ isResizingH: false });
+  };
 
-  onResizeEnd = () => {
-    document.removeEventListener("mousemove", this.onResizeMove);
-    document.removeEventListener("mouseup", this.onResizeEnd);
-    this.setState({ isResizing: false });
+  // ── width resize ────────────────────────────────────────────────────────────
+  onResizeWStart = (e) => {
+    e.preventDefault();
+    this._resizeStartX = e.clientX;
+    this._resizeStartW = this.state.emuWidth;
+    document.addEventListener("mousemove", this.onResizeWMove);
+    document.addEventListener("mouseup", this.onResizeWEnd);
+    this.setState({ isResizingW: true });
+  };
+  onResizeWMove = (e) => {
+    const newW = Math.min(EMU_WIDTH_MAX, Math.max(EMU_WIDTH_MIN,
+      this._resizeStartW + (e.clientX - this._resizeStartX)));
+    this.setState({ emuWidth: newW });
+  };
+  onResizeWEnd = () => {
+    document.removeEventListener("mousemove", this.onResizeWMove);
+    document.removeEventListener("mouseup", this.onResizeWEnd);
+    this.setState({ isResizingW: false });
   };
 
   componentWillUnmount() {
-    document.removeEventListener("mousemove", this.onResizeMove);
-    document.removeEventListener("mouseup", this.onResizeEnd);
+    document.removeEventListener("mousemove", this.onResizeHMove);
+    document.removeEventListener("mouseup", this.onResizeHEnd);
+    document.removeEventListener("mousemove", this.onResizeWMove);
+    document.removeEventListener("mouseup", this.onResizeWEnd);
   }
 
   onDragEnter = (e) => {
@@ -324,19 +375,16 @@ class EmulatorScreen extends React.Component {
     a.click();
   };
 
-  toggleLogcat = () => {
-    this.setState((prev) => ({ showLogcat: !prev.showLogcat }));
-  };
-
-  clearLogcat = () => {
-    this.setState((prev) => ({ logcatKey: prev.logcatKey + 1 }));
-  };
+  toggleLogcat = () => this.setState((prev) => ({ showLogcat: !prev.showLogcat }));
+  clearLogcat  = () => this.setState((prev) => ({ logcatKey: prev.logcatKey + 1 }));
 
   render() {
     const { uri, auth, classes } = this.props;
-    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus, showLogcat, logcatKey, emuHeight, isResizing } = this.state;
+    const { view, emuState, muted, gps, dragDepth, dragIsApk, uploadStatus,
+            showLogcat, logcatKey, emuHeight, emuWidth, isResizingH, isResizingW } = this.state;
     const isDragging = dragDepth > 0;
-    const frameHeight = BEZEL_TOP + emuHeight + BEZEL_BOTTOM;
+    const frameWidth  = emuWidth  + BEZEL_SIDE * 2;
+    const frameHeight = emuHeight + BEZEL_TOP  + BEZEL_BOTTOM;
 
     const toastBg =
       uploadStatus?.type === "success" ? "rgba(20,83,45,0.88)" :
@@ -389,65 +437,76 @@ class EmulatorScreen extends React.Component {
 
         {/* main */}
         <div className={classes.content}>
-          {/* device */}
-          <div className={classes.deviceFrame} style={{ height: frameHeight }}>
-            <div className={classes.deviceNotch} />
-            <div
-              className={classes.emuWrapper}
-              style={{ height: emuHeight }}
-              onDragEnter={this.onDragEnter}
-              onDragOver={this.onDragOver}
-              onDragLeave={this.onDragLeave}
-              onDrop={this.onDrop}
-            >
-              <div className={classes.emuContainer}>
-                <Emulator
-                  uri={uri} auth={auth} view={view}
-                  onStateChange={this.stateChange} onError={this.onError}
-                  muted={muted} volume={0} gps={gps}
-                  width={EMU_WIDTH} height={emuHeight}
-                />
-              </div>
 
-              {(isDragging || uploadStatus) && (
-                <div className={classes.dropOverlay}>
-                  {isDragging ? (
-                    <>
-                      <div className={classes.dropIcon}>{dragIsApk ? "📦" : "📁"}</div>
-                      <div className={classes.dropLabel}>{dragIsApk ? "Drop to install APK" : "Drop to upload file"}</div>
-                      <div className={classes.dropSub}>{dragIsApk ? "adb install -r" : "→ /sdcard/Download/"}</div>
-                    </>
-                  ) : (
-                    <div className={classes.toastBar} style={{ backgroundColor: toastBg }}>
-                      {uploadStatus.type === "progress" && "⏳  "}
-                      {uploadStatus.type === "success"  && "✓  "}
-                      {uploadStatus.type === "error"    && "✗  "}
-                      {uploadStatus.message}
-                    </div>
-                  )}
+          {/* device frame + right width-handle */}
+          <div className={classes.deviceRow}>
+            <div className={classes.deviceFrame} style={{ width: frameWidth, height: frameHeight }}>
+              <div className={classes.deviceNotch} />
+              <div
+                className={classes.emuWrapper}
+                style={{ width: emuWidth, height: emuHeight }}
+                onDragEnter={this.onDragEnter}
+                onDragOver={this.onDragOver}
+                onDragLeave={this.onDragLeave}
+                onDrop={this.onDrop}
+              >
+                <div className={classes.emuContainer}>
+                  <Emulator
+                    uri={uri} auth={auth} view={view}
+                    onStateChange={this.stateChange} onError={this.onError}
+                    muted={muted} volume={0} gps={gps}
+                    width={emuWidth} height={emuHeight}
+                  />
                 </div>
-              )}
+
+                {(isDragging || uploadStatus) && (
+                  <div className={classes.dropOverlay}>
+                    {isDragging ? (
+                      <>
+                        <div className={classes.dropIcon}>{dragIsApk ? "📦" : "📁"}</div>
+                        <div className={classes.dropLabel}>{dragIsApk ? "Drop to install APK" : "Drop to upload file"}</div>
+                        <div className={classes.dropSub}>{dragIsApk ? "adb install -r" : "→ /sdcard/Download/"}</div>
+                      </>
+                    ) : (
+                      <div className={classes.toastBar} style={{ backgroundColor: toastBg }}>
+                        {uploadStatus.type === "progress" && "⏳  "}
+                        {uploadStatus.type === "success"  && "✓  "}
+                        {uploadStatus.type === "error"    && "✗  "}
+                        {uploadStatus.message}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className={classes.deviceHome} />
             </div>
-            <div className={classes.deviceHome} />
+
+            {/* width resize handle — right side */}
+            <div className={classes.resizeHandleW} onMouseDown={this.onResizeWStart}>
+              <div style={{ position: "relative", display: "flex", flexDirection: "row", alignItems: "center" }}>
+                <div className={classes.resizeBarW} />
+                <span className={`${classes.resizeLabel} ${isResizingW ? classes.resizeLabelVisible : ""}`}
+                  style={{ marginLeft: 8 }}>
+                  {emuWidth}px
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* resize handle */}
-          <div
-            className={classes.resizeHandle}
-            onMouseDown={this.onResizeStart}
-            style={{ cursor: isResizing ? "ns-resize" : "ns-resize" }}
-          >
+          {/* height resize handle — below device row */}
+          <div className={classes.resizeHandleH} style={{ width: frameWidth }} onMouseDown={this.onResizeHStart}>
             <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div className={classes.resizeBar} />
-              <span className={`${classes.resizeLabel} ${isResizing ? classes.resizeLabelVisible : ""}`}>
+              <div className={classes.resizeBarH} />
+              <span className={`${classes.resizeLabel} ${isResizingH ? classes.resizeLabelVisible : ""}`}
+                style={{ marginTop: 14 }}>
                 {emuHeight}px
               </span>
             </div>
           </div>
 
-          {/* logcat — only mounted when visible, so stream only runs when open */}
+          {/* logcat — only mounted when visible */}
           {showLogcat && (
-            <div className={classes.logcatPanel}>
+            <div className={classes.logcatPanel} style={{ width: frameWidth }}>
               <div className={classes.logcatHeader}>
                 <div className={classes.logcatTitle}>
                   <div className={classes.logcatLiveDot} />
